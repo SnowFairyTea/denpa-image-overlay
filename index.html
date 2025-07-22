@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>denpa‑QR Overlay Tool</title>
+  <style>
+    body {font-family: ui-sans-serif, sans-serif; margin: 0; padding: 0;}
+    main {display:flex; max-width:1200px; margin:auto; padding:1rem; gap:1rem;}
+
+    /* ドロップゾーン */
+    #dropzones {display:flex; flex-direction:column; gap:.8rem;}
+    .dropzone {
+      width:180px; height:120px; border:2px dashed #aaa; border-radius:8px;
+      display:flex; align-items:center; justify-content:center; text-align:center;
+      font-size:.85rem; color:#666; cursor:pointer; position:relative; overflow:hidden;
+      background:#fafafa; transition:border-color .2s;
+    }
+    .dropzone.hover {border-color:#0d99ff;}
+    .dropzone img {max-width:100%; max-height:100%; object-fit:contain;
+      position:absolute; inset:0; margin:auto;}
+
+    .placeholder {pointer-events:none; line-height:1.2;}
+    .placeholder svg {width:32px; height:32px; fill:#bbb; margin-bottom:.2rem;}
+
+    /* 合成キャンバス */
+    #canvas {flex:1 1 0%; border:1px solid #ccc; max-width:100%; height:auto;}
+    #controls {margin-top:1rem; display:flex; gap:.6rem;}
+    #download {padding:.6rem 1rem; font-size:1rem;}
+  </style>
+</head>
+<body>
+  <main>
+    <!-- ドロップゾーン列 -->
+    <section id="dropzones">
+      <div class="dropzone" data-index="0">
+        <span class="placeholder">
+          <svg viewBox="0 0 24 24"><path d="M21 19V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14h18zM5 5h14v9l-3.5-3.5-4.5 4.5-2-2L5 17V5z"/></svg><br>画像1<br>(ベース)
+        </span>
+      </div>
+      <div class="dropzone" data-index="1">
+        <span class="placeholder">
+          <svg viewBox="0 0 24 24"><path d="M21 19V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14h18zM5 5h14v9l-3.5-3.5-4.5 4.5-2-2L5 17V5z"/></svg><br>画像2
+        </span>
+      </div>
+      <div class="dropzone" data-index="2">
+        <span class="placeholder">
+          <svg viewBox="0 0 24 24"><path d="M21 19V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14h18zM5 5h14v9l-3.5-3.5-4.5 4.5-2-2L5 17V5z"/></svg><br>画像3
+        </span>
+      </div>
+    </section>
+
+    <!-- 合成結果 -->
+    <section style="flex:1; display:flex; flex-direction:column;">
+      <canvas id="canvas"></canvas>
+      <div id="controls">
+        <button id="download" disabled>合成画像をダウンロード</button>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const dropzones = document.querySelectorAll('.dropzone');
+    const images = [null, null, null]; // Image オブジェクトを保持
+
+    // 各ドロップゾーンにファイル選択用 input を埋め込む
+    dropzones.forEach((dz, idx) => {
+      const fileInput = document.createElement('input');
+      fileInput.type = 'file';
+      fileInput.accept = 'image/*';
+      fileInput.style.display = 'none';
+      dz.appendChild(fileInput);
+
+      dz.addEventListener('click', () => fileInput.click());
+      fileInput.addEventListener('change', () => handleFiles(fileInput.files, idx));
+
+      // Drag & Drop
+      dz.addEventListener('dragover', (e)=>{e.preventDefault(); dz.classList.add('hover');});
+      dz.addEventListener('dragleave', ()=> dz.classList.remove('hover'));
+      dz.addEventListener('drop', (e)=>{
+        e.preventDefault(); dz.classList.remove('hover');
+        if(e.dataTransfer.files.length) handleFiles(e.dataTransfer.files, idx);
+      });
+    });
+
+    // ペースト対応（最初の空きスロットに挿入）
+    window.addEventListener('paste', (e)=>{
+      const items = e.clipboardData.items;
+      for(const item of items){
+        if(item.kind==='file' && item.type.startsWith('image/')){
+          const file = item.getAsFile();
+          const emptyIdx = images.findIndex(i=>!i);
+          if(emptyIdx!==-1) handleFiles([file], emptyIdx);
+        }
+      }
+    });
+
+    function handleFiles(fileList, targetIdx){
+      const file = fileList[0]; // 1 枚だけ扱う
+      if(!file) return;
+      const reader = new FileReader();
+      reader.onload = ()=>{
+        const img = new Image();
+        img.onload = ()=>{
+          images[targetIdx] = img;
+          const dz = dropzones[targetIdx];
+          dz.innerHTML = ''; dz.appendChild(img.cloneNode());
+          renderComposite();
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const downloadBtn = document.getElementById('download');
+    downloadBtn.addEventListener('click', ()=>{
+      const link = document.createElement('a');
+      const timestamp = new Date().toISOString().replace(/[:.]/g,'-');
+      link.download = `composite_${timestamp}.png`;
+      link.href = canvas.toDataURL('image/png');
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    });
+
+    function renderComposite(){
+      const base = images[0];
+      if(!base){ ctx.clearRect(0,0,canvas.width,canvas.height); downloadBtn.disabled=true; return; }
+
+      canvas.width = base.naturalWidth;
+      canvas.height = base.naturalHeight;
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      ctx.drawImage(base, 0, 0);
+
+      const scale = 0.25; // オーバーレイを 25% に縮小
+
+      if(images[1]) drawBottomRight(images[1]);
+      if(images[2]) drawBottomLeft(images[2]);
+
+      downloadBtn.disabled = false;
+
+      function drawBottomRight(img){
+        const w = canvas.width * scale;
+        const h = img.naturalHeight * (w / img.naturalWidth);
+        ctx.drawImage(img, canvas.width - w, canvas.height - h, w, h);
+      }
+      function drawBottomLeft(img){
+        const w = canvas.width * scale;
+        const h = img.naturalHeight * (w / img.naturalWidth);
+        ctx.drawImage(img, 0, canvas.height - h, w, h);
+      }
+    }
+  </script>
+</body>
+</html>

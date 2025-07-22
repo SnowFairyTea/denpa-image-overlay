@@ -2,9 +2,17 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <title>denpa‑QR Overlay Tool</title>
+  <title>電波人間のRPG用QR画像合成ツール</title>
   <style>
     body {font-family: ui-sans-serif, sans-serif; margin: 0; padding: 0;}
+    header {background:#0d99ff; color:#fff; padding:1rem 0;}
+    header h1 {margin:0; font-size:1.6rem; text-align:center;}
+
+    #usage {max-width:1200px; margin:auto; padding:1rem; line-height:1.6;}
+    #usage h2 {font-size:1.25rem; margin-top:0;}
+    #usage ol {padding-left:1.2rem;}
+    #usage li {margin-bottom:.8rem;}
+
     main {display:flex; max-width:1200px; margin:auto; padding:1rem; gap:1rem;}
 
     /* ドロップゾーン */
@@ -19,32 +27,64 @@
     .dropzone img {max-width:100%; max-height:100%; object-fit:contain;
       position:absolute; inset:0; margin:auto;}
 
-    .placeholder {pointer-events:none; line-height:1.2;}
-    .placeholder svg {width:32px; height:32px; fill:#bbb; margin-bottom:.2rem;}
+    /* プレースホルダーアイコン */
+    .placeholder {pointer-events:none; line-height:1.2; display:flex; flex-direction:column; align-items:center;}
+    .placeholder-icon {width:40px; height:40px; margin-bottom:.2rem;}
+    .placeholder-icon .big,
+    .placeholder-icon .left,
+    .placeholder-icon .right {fill:none; stroke:#bbb; stroke-width:1.8;}
+    /* ハイライト */
+    .icon-base .big {stroke:#0d99ff;}
+    .icon-right .right {stroke:#0d99ff;}
+    .icon-left .left {stroke:#0d99ff;}
 
     /* 合成キャンバス */
     #canvas {flex:1 1 0%; border:1px solid #ccc; max-width:100%; height:auto;}
     #controls {margin-top:1rem; display:flex; gap:.6rem;}
-    #download {padding:.6rem 1rem; font-size:1rem;}
+    #download, #reset {padding:.6rem 1rem; font-size:1rem;}
   </style>
 </head>
 <body>
+  <header>
+    <h1>電波人間のRPG用QR画像合成ツール</h1>
+  </header>
+
+
+
   <main>
     <!-- ドロップゾーン列 -->
     <section id="dropzones">
+      <!-- 画像1（ベース） -->
       <div class="dropzone" data-index="0">
         <span class="placeholder">
-          <svg viewBox="0 0 24 24"><path d="M21 19V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14h18zM5 5h14v9l-3.5-3.5-4.5 4.5-2-2L5 17V5z"/></svg><br>画像1<br>(ベース)
+          <svg viewBox="0 0 24 24" class="placeholder-icon icon-base">
+            <rect x="3" y="4" width="18" height="14" class="big"/>
+            <rect x="1" y="12" width="8" height="6" class="left"/>
+            <rect x="15" y="12" width="8" height="6" class="right"/>
+          </svg>
+          画像1 (ベース)
         </span>
       </div>
+      <!-- 画像2（右下） -->
       <div class="dropzone" data-index="1">
         <span class="placeholder">
-          <svg viewBox="0 0 24 24"><path d="M21 19V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14h18zM5 5h14v9l-3.5-3.5-4.5 4.5-2-2L5 17V5z"/></svg><br>画像2
+          <svg viewBox="0 0 24 24" class="placeholder-icon icon-right">
+            <rect x="3" y="4" width="18" height="14" class="big"/>
+            <rect x="1" y="12" width="8" height="6" class="left"/>
+            <rect x="15" y="12" width="8" height="6" class="right"/>
+          </svg>
+          画像2 (右下)
         </span>
       </div>
+      <!-- 画像3（左下） -->
       <div class="dropzone" data-index="2">
         <span class="placeholder">
-          <svg viewBox="0 0 24 24"><path d="M21 19V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14h18zM5 5h14v9l-3.5-3.5-4.5 4.5-2-2L5 17V5z"/></svg><br>画像3
+          <svg viewBox="0 0 24 24" class="placeholder-icon icon-left">
+            <rect x="3" y="4" width="18" height="14" class="big"/>
+            <rect x="1" y="12" width="8" height="6" class="left"/>
+            <rect x="15" y="12" width="8" height="6" class="right"/>
+          </svg>
+          画像3 (左下)
         </span>
       </div>
     </section>
@@ -54,6 +94,7 @@
       <canvas id="canvas"></canvas>
       <div id="controls">
         <button id="download" disabled>合成画像をダウンロード</button>
+        <button id="reset" type="button">リセット</button>
       </div>
     </section>
   </main>
@@ -62,7 +103,14 @@
     const dropzones = document.querySelectorAll('.dropzone');
     const images = [null, null, null]; // Image オブジェクトを保持
 
-    // 各ドロップゾーンにファイル選択用 input を埋め込む
+    // プレースホルダーの HTML テンプレート
+    const placeholders = [
+      `<span class="placeholder">\n        <svg viewBox="0 0 24 24" class="placeholder-icon icon-base">\n          <rect x="3" y="4" width="18" height="14" class="big"/>\n          <rect x="1" y="12" width="8" height="6" class="left"/>\n          <rect x="15" y="12" width="8" height="6" class="right"/>\n        </svg>\n        画像1 (ベース)\n      </span>`,
+      `<span class="placeholder">\n        <svg viewBox="0 0 24 24" class="placeholder-icon icon-right">\n          <rect x="3" y="4" width="18" height="14" class="big"/>\n          <rect x="1" y="12" width="8" height="6" class="left"/>\n          <rect x="15" y="12" width="8" height="6" class="right"/>\n        </svg>\n        画像2 (右下)\n      </span>`,
+      `<span class="placeholder">\n        <svg viewBox="0 0 24 24" class="placeholder-icon icon-left">\n          <rect x="3" y="4" width="18" height="14" class="big"/>\n          <rect x="1" y="12" width="8" height="6" class="left"/>\n          <rect x="15" y="12" width="8" height="6" class="right"/>\n        </svg>\n        画像3 (左下)\n      </span>`
+    ];
+
+    // ファイル選択用 input を追加
     dropzones.forEach((dz, idx) => {
       const fileInput = document.createElement('input');
       fileInput.type = 'file';
@@ -82,7 +130,7 @@
       });
     });
 
-    // ペースト対応（最初の空きスロットに挿入）
+    // ペースト対応（空きスロットに挿入）
     window.addEventListener('paste', (e)=>{
       const items = e.clipboardData.items;
       for(const item of items){
@@ -95,7 +143,7 @@
     });
 
     function handleFiles(fileList, targetIdx){
-      const file = fileList[0]; // 1 枚だけ扱う
+      const file = fileList[0];
       if(!file) return;
       const reader = new FileReader();
       reader.onload = ()=>{
@@ -103,7 +151,8 @@
         img.onload = ()=>{
           images[targetIdx] = img;
           const dz = dropzones[targetIdx];
-          dz.innerHTML = ''; dz.appendChild(img.cloneNode());
+          dz.querySelectorAll('img').forEach(el=>el.remove());
+          dz.insertAdjacentElement('afterbegin', img.cloneNode());
           renderComposite();
         };
         img.src = reader.result;
@@ -124,6 +173,23 @@
       document.body.removeChild(link);
     });
 
+    // リセット処理
+    const resetBtn = document.getElementById('reset');
+    resetBtn.addEventListener('click', resetAll);
+
+    function resetAll(){
+      dropzones.forEach((dz, idx)=>{
+        // file input を保持
+        const fileInput = dz.querySelector('input[type="file"]');
+        dz.innerHTML = '';
+        dz.appendChild(fileInput);
+        dz.insertAdjacentHTML('afterbegin', placeholders[idx]);
+        images[idx] = null;
+      });
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      downloadBtn.disabled = true;
+    }
+
     function renderComposite(){
       const base = images[0];
       if(!base){ ctx.clearRect(0,0,canvas.width,canvas.height); downloadBtn.disabled=true; return; }
@@ -133,11 +199,9 @@
       ctx.clearRect(0,0,canvas.width,canvas.height);
       ctx.drawImage(base, 0, 0);
 
-      const scale = 0.25; // オーバーレイを 25% に縮小
-
+      const scale = 0.25; // オーバーレイ 25%
       if(images[1]) drawBottomRight(images[1]);
       if(images[2]) drawBottomLeft(images[2]);
-
       downloadBtn.disabled = false;
 
       function drawBottomRight(img){
@@ -152,5 +216,19 @@
       }
     }
   </script>
+    <section id="usage">
+    <h2>使い方</h2>
+    <ol>
+      <li><strong>画像を読み込む</strong><br>
+          左側の 3つの枠に、画像をドラッグ＆ドロップかクリックして選択、または<kbd>Ctrl</kbd>+<kbd>V</kbd>で貼り付けます。<br>
+          2枚目は右下、3枚目は左下に、ベースの25%サイズで自動的に重ねられます。</li>
+      <li><strong>合成結果を確認する</strong><br>
+          画像が読み込まれると、右側のキャンバスにリアルタイムで合成結果が表示されます。</li>
+      <li><strong>ダウンロードする</strong><br>
+          「合成画像をダウンロード」を押すと、タイムスタンプ付きのPNGファイルを保存できます。</li>
+      <li><strong>リセットする</strong><br>
+          「リセット」を押すと、読み込んだ画像とキャンバスをすべて初期状態に戻せます。</li>
+    </ol>
+  </section>
 </body>
 </html>
